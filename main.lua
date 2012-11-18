@@ -149,8 +149,17 @@ local function serverRecv(data, clientid)
 	data = data:match("^(.-)\n*$")
 	if data:match("^getMarkers") then
 		for i = 1, #markers do
+			print('Sending a '..markers[i].kind)
+			local kind = markers[i].kind
+			if kind == 'blocks' then
+				kind = 1
+			elseif kind == 'detective' then
+				kind = 2
+			elseif kind == 'criminal' then
+				kind = 3
+			end
 			conn:send(
-				("%d:%d:%d\n"):format(markers[i].id, markers[i].x, markers[i].y),
+				("%d:%d:%d:%d\n"):format(markers[i].id, markers[i].x, markers[i].y, kind),
 				clientid)
 		end
 	else
@@ -227,20 +236,28 @@ local function prepareMarkers()
 			markers[toMove], markers[i] = markers[i], markers[toMove]
 		end
 	else
-		local msg, line, id, x, y
+		local msg, line, id, x, y, kind
 		conn:send("getMarkers\n")
 		for i = 1, #markers do
 			repeat
 				local line = getLine()
-				id, x, y = line:match("(%d+):(%d+):(%d+)")
+				id, x, y, kind = line:match("(%d+):(%d+):(%d+):(%d+)")
 				if not id then
 					clientRecv(msg)
 				end
-			until id and x and y
-			id, x, y = tonumber(id), tonumber(x), tonumber(y)
-			markers[i]:construct(id)
+			until id and x and y and kind
+			id, x, y, kind = tonumber(id), tonumber(x), tonumber(y), tonumber(kind)
+			if kind == 1 then
+				kind = "blocks"
+			elseif kind == 2 then
+				kind = "detective"
+			elseif kind == 3 then
+				kind = "criminal"
+			end
+			markers[i]:construct(id, kind)
 			markers[i].x, markers[i].y = x, y
-			id, x, y = nil, nil, nil
+			markers[i].kind = kind
+			id, x, y, kind = nil, nil, nil, nil
 		end
 	end
 end
