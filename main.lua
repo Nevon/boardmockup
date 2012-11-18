@@ -260,7 +260,7 @@ function love.load(args)
 	end
 
 	table.insert(markers, Marker(5, 'detective'))
-	table.insert(markers, Marker(5, 'criminal'))	
+	table.insert(markers, Marker(6, 'criminal'))	
 
 	love.audio.play('sounds/shuffle.ogg')
 
