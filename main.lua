@@ -5,42 +5,32 @@ local server = true
 local conn
 local numConnected = 0
 
-Card = Class{function(self, id)
+Marker = Class{function(self, id, kind)
 	self.id = id
-	self.value = (id % 13) + 2
-	self.width = 75
-	self.height = 107
+	self.kind = kind
+	self.radius = 37
 	self.x = math.random(0, 1125)
-	self.y = math.random(0, 590)
-	self.flipped = false
-
-	if id<13 then self.suit = "spades"
-	elseif id < 26 then self.suit = "clubs"
-	elseif id < 39 then self.suit = "hearts"
-	elseif id < 52 then self.suit = "diamonds" end
-
-	if self.suit == "spades" or self.suit == "clubs" then self.color = "black"
-	else self.color = "red" end
-
-	if self.value < 11 then self.name = self.value.." of "..self.suit
-	elseif self.value == 11 then self.name = "Jack of "..self.suit
-	elseif self.value == 12 then self.name = "Queen of "..self.suit
-	elseif self.value == 13 then self.name = "King of "..self.suit
-	elseif self.value == 14 then self.name = "Ace of "..self.suit end
-
-	self.image = love.graphics.newImage("images/cards/"..self.suit.."-"..self.value.."-75.png")
+	self.y = math.random(0, 590)	
 end}
 
-function Card:draw()
-	if not self.flipped then
-		love.graphics.draw(self.image, self.x, self.y)
+function Marker:draw()
+	if self.kind == 'detective' then
+		love.graphics.setColor(255,0,0,255)
+		love.graphics.circle('fill', self.x, self.y, self.radius, self.radius)
+		love.graphics.setColor(255,255,255,255)
+	elseif self.kind == 'criminal' then
+		love.graphics.setColor(0,255,0,255)
+		love.graphics.circle('fill', self.x, self.y, self.radius, self.radius)
+		love.graphics.setColor(255,255,255,255)
 	else
-		love.graphics.draw(back, self.x, self.y)
+		love.graphics.setColor(0,0,0,255)
+		love.graphics.circle('fill', self.x, self.y, self.radius, self.radius)
+		love.graphics.setColor(255,255,255,255)
 	end
 end
 
-function Card:moved(x, y, remote)
-	print (self.name .. " (" .. self.id .. ") " .. "was moved to " .. x .. "/" .. y)
+function Marker:moved(x, y, remote)
+	print (self.kind .. " (" .. self.id .. ") " .. "was moved to " .. x .. "/" .. y)
 
 	self.x = x
 	self.y = y
@@ -48,36 +38,29 @@ function Card:moved(x, y, remote)
 	love.audio.play('sounds/place.ogg')
 
 	--Move 
-	local thisCard
-	for i,v in ipairs(deck) do
+	local thisMarker
+	for i,v in ipairs(markers) do
 		if self.id == v.id then
-			thisCard = table.remove(deck, i)
+			thisMarker = table.remove(markers, i)
 			break
 		end
 	end
 
-	table.insert(deck, thisCard)
+	table.insert(markers, thisMarker)
 
 	if not remote then
 		conn:send(("moved:%d:%d:%d\n"):format(self.id, x, y))
 	end
 end
 
-function Card:clicked(x, y)
+function Marker:clicked(x, y)
 	--Point in rect
-	if x>self.x and x<self.x+self.width
-	and y>self.y and y<self.y+self.height then
-		print (self.name .. ' was clicked')
+	if distance(self.x, self.y, x, y) <= self.radius then
+		print (self.kind .. ' ('.. self.id ..') was clicked')
 		return true
 	else
 		return false
 	end
-end
-
-function Card:flip()
-	self.flipped = not self.flipped
-	
-	conn:send(("flipped:%d:%d\n"):format(self.id, self.flipped and 1 or 0))
 end
 
 function ripairs(t)
@@ -95,6 +78,14 @@ function ripairs(t)
     end
   end
   return ripairs_it, t, max
+end
+
+function distance(x1, y1, x2, y2)
+
+	local dx=x2-x1
+	local dy=y2-y1
+
+	return math.sqrt(math.pow(dx,2)+math.pow(dy,2))
 end
 
 do
@@ -145,20 +136,9 @@ local function clientRecv(data)
 		local id, x, y = data:match("^moved:(%d+):(%d+):(%d+)")
 		assert(id, "Invalid message")
 		id, x, y = tonumber(id), tonumber(x), tonumber(y)
-		for i, v in ipairs(deck) do
+		for i, v in ipairs(markers) do
 			if v.id == id then
 				v:moved(x, y, true)
-				break
-			end
-		end
-	elseif data:match("^flipped:") then
-		local id, flipped = data:match("^flipped:(%d+):(%d)")
-		assert(id, "Invalid message")
-		id = tonumber(id)
-		flipped = (flipped == "1")
-		for i, v in ipairs(deck) do
-			if v.id == id then
-				v.flipped = flipped
 				break
 			end
 		end
@@ -167,10 +147,10 @@ end
 
 local function serverRecv(data, clientid)
 	data = data:match("^(.-)\n*$")
-	if data:match("^getDeck") then
-		for i = 1, #deck do
+	if data:match("^getMarkers") then
+		for i = 1, #markers do
 			conn:send(
-				("%d:%d:%d:%d\n"):format(deck[i].id, deck[i].x, deck[i].y, deck[i].flipped and 1 or 0),
+				("%d:%d:%d\n"):format(markers[i].id, markers[i].x, markers[i].y),
 				clientid)
 		end
 	else
@@ -239,30 +219,28 @@ do
 	end
 end
 
-local function prepareDeck()
+local function prepareMarkers()
 	if server then
 		--Shuffle the shit out of it
-		for i=#deck, 1, -1 do
+		for i=#markers, 1, -1 do
 			local toMove = math.random(i)
-			deck[toMove], deck[i] = deck[i], deck[toMove]
+			markers[toMove], markers[i] = markers[i], markers[toMove]
 		end
 	else
-		local msg, line, id, x, y, flipped
-		conn:send("getDeck\n")
-		for i = 1, #deck do
+		local msg, line, id, x, y
+		conn:send("getMarkers\n")
+		for i = 1, #markers do
 			repeat
 				local line = getLine()
-				id, x, y, flipped = line:match("(%d+):(%d+):(%d+):(%d)")
+				id, x, y = line:match("(%d+):(%d+):(%d+)")
 				if not id then
 					clientRecv(msg)
 				end
 			until id and x and y
 			id, x, y = tonumber(id), tonumber(x), tonumber(y)
-			flipped = (flipped == "1")
-			deck[i]:construct(id)
-			deck[i].x, deck[i].y = x, y
-			deck[i].flipped = flipped
-			id, x, y, flipped = nil, nil, nil, nil
+			markers[i]:construct(id)
+			markers[i].x, markers[i].y = x, y
+			id, x, y = nil, nil, nil
 		end
 	end
 end
@@ -274,13 +252,15 @@ function love.load(args)
 	math.random()
 	
 	bg = love.graphics.newImage('images/felt.png')
-	back = love.graphics.newImage('images/cards/back.png')
 	selected = false
-	--Initialize deck
-	deck = {}
-	for i = 0,51 do
-		deck[i+1] = Card(i)
+	--Initialize markers
+	markers = {}
+	for i = 0,4 do
+		markers[i+1] = Marker(i, "blocks")
 	end
+
+	table.insert(markers, Marker(5, 'detective'))
+	table.insert(markers, Marker(5, 'criminal'))	
 
 	love.audio.play('sounds/shuffle.ogg')
 
@@ -289,7 +269,7 @@ function love.load(args)
 		table.insert(nwArgs, args[i])
 	end
 	prepareNetwork(nwArgs)
-	prepareDeck()
+	prepareMarkers()
 end
 
 function love.update(dt)
@@ -299,18 +279,23 @@ end
 function love.draw()
 	love.graphics.draw(bg, 0, 0)
 
-	for i,v in ipairs(deck) do
+	--Draw board
+	for x=0,8 do
+		for y=0,8 do
+			love.graphics.rectangle('fill', 250+x*80+x*1, 35+y*80+y*1, 80, 80);
+		end
+	end
+
+	for i,v in ipairs(markers) do
 		v:draw()
 	end
 
 	if selected then
 		x,y = love.mouse.getPosition()
-		x = math.ceil(x-75/2)
-		y = math.ceil(y-107/2)
 		love.graphics.setColor(94,167,214, 177)
-		love.graphics.rectangle('fill', x, y, 75, 107)
+		love.graphics.circle('fill', x, y, 37, 37)
 		love.graphics.setColor(157,190,250, 255)
-		love.graphics.rectangle('line', x-1, y-1, 76, 108)
+		love.graphics.circle('line', x, y, 38, 38)
 		love.graphics.setColor(255,255,255,255)
 	end
 
@@ -320,12 +305,10 @@ function love.draw()
 end
 
 function love.mousepressed(x, y, button)
-	for i,v in ripairs(deck) do
+	for i,v in ripairs(markers) do
 		if v:clicked(x, y) then
 			if button == 'l' then
 				selected = v.id
-			elseif button == 'r' then
-				v:flip()
 			end
 			break
 		end
@@ -334,9 +317,9 @@ end
 
 function love.mousereleased(x, y, button)
 	if selected then
-		for i,v in ipairs(deck) do
+		for i,v in ipairs(markers) do
 			if v.id == selected then
-				v:moved(math.ceil(x-v.width/2),math.ceil(y-v.height/2))
+				v:moved(math.ceil(x),math.ceil(y))
 			end
 		end
 		selected = false
